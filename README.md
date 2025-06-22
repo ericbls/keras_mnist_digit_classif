@@ -1,5 +1,6 @@
 # keras_mnist_digit_class
 **Author: Eric Buonpater Lee Santos**
+
 **Default Idiom: Portuguese**
 
 This is a convolutional neural network application for classification of manuscript numeric digits (0 to 9). It imports a well-known database called MNIST, already included in the package KERAS. The MNIST database includes several 28 pixels images of hand-written single digits.
