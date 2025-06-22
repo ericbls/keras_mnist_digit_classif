@@ -11,3 +11,4 @@ In the main code, these images are used to train neural networks to recognize an
 ├── assignment_description.pdf                            # Problem description (portuguese)
 ├── README.md                                             # Current file with overview of the project
 ```
+![Image](https://github.com/user-attachments/assets/e007fbcf-001a-41fc-bd83-907567a26887)
