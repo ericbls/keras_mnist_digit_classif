@@ -1,0 +1,327 @@
+---
+title: "AEM2_quiz3_grupo1"
+author: "Eric Lee e Tali Sovarassi"
+date: "2025-06-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(keras)
+```
+
+# AEM 2 - Quiz 3 - Grupo 1
+
+Este projeto irá analisar a base de dados *MNIST* incluso no pacote KERAS, com o objetivo de treinar uma rede neural para melhor avaliar imagens manuscritas de números de 0 a 9..
+
+Após treinado, será importado uma base de imagens de manuscritos sem a classificação que permite realizar a validação, para prever quais números cada imagem manuscrita refere-se.
+
+## Preparação da base de imagens
+
+```{r}
+# Base de dados utilizada para treinar o modelo
+mnist <- dataset_mnist()
+
+# Separação da base em treino X e treino Y.
+x_train <- mnist$train$x
+y_train <- mnist$train$y
+
+# Definição dos valores para validação (x_test e y_test)
+x_test <- mnist$test$x
+y_test <- mnist$test$y
+```
+
+Geralmente, para separar a base em treino e teste, utilizamos a função `split` em uma proporção determinada, como 70% treino e 30% teste. Mas como a base MNIST já vem com uma separação predeterminada, já podemos definir os dataframes de treino e teste.
+
+```{r}
+# matriz com 60000 imagens e 784 colunas (cada linha = 1 imagem)
+x_train <- array_reshape(x_train, c(nrow(x_train), 784))
+x_test <- array_reshape(x_test, c(nrow(x_test), 784))
+
+# rescale - retifica os pixels em uma escala binária (preto e branco)
+# Antes deste comando, haveria tons de cinza
+x_train <- x_train / 255
+x_test <- x_test / 255
+
+# Os dados y s?o um vetor inteiro com valores variando de 0 a 9.
+#Para preparar esses dados para treinamento, codificamos os vetores
+#em matrizes de classe bin?ria usando a fun??o Keras to_categorical():
+y_train <- to_categorical(y_train, 10)
+y_test <- to_categorical(y_test, 10)
+```
+
+Acima é realizado a transformação dos dados de imagens em um dataframe de 2 dimensões, em que cada linha representa uma imagem, em formato de lista dos valores dos pixels.
+
+## Modelo de Rede Neural 1
+
+Nesta secção o modelo neural treinado é o mesmo que o executado no exemplo de aula.
+
+### Configuração do modelo 1
+
+```{r}
+# Pré-configurando o modelo de rede neural
+modelo1 <- keras_model_sequential() 
+modelo1 %>% 
+  layer_dense(units = 256, activation = 'relu', input_shape = c(784)) %>% 
+  layer_dropout(rate = 0.4) %>% 
+  layer_dense(units = 128, activation = 'relu') %>%
+  layer_dropout(rate = 0.3) %>%
+  layer_dense(units = 10, activation = 'softmax')
+```
+
+O modelo treinado acima tem a seguinte estrutura:
+
+-   `layer_dense(units = 256, activation = 'relu', input_shape = c(784))` : Cria uma camada interna com 256 neurônios, que receberá 784 valores (todos os pixels de 1 imagem), e utilizará a função ReLU, como parâmetro de ativação.
+
+-   `layer_dropout(rate = 0.4)` : Para evitar *overfittin*, 40% das conexões entre os neurônios de entrada e a primeira camada de neurônios intermediários, são eliminadas aleatroriamente. Isso também melhora o desempenho computacional.
+
+-   `layer_dense(units = 128, activation = 'relu')` : Nesta outra camada intermediária o mesmo é realizado que na primeira camada intermediária. Contudo, com 128 neurônios.
+
+-   `layer_dropout(rate = 0.3)` : desta vez apenas 30% das conexões são eliminadas.
+
+-   `layer_dense(units = 10, activation = 'softmax')`\` : finalmente, camada de Output possui 10 nódulos, cada um representa a chance de uma previsão ser um número, entre 0 e 9. O valor deste nódulo vai de 0 até 1, graças à função *softmax*, que garante que a soma de todas as chances dê 1.
+
+### Compilando o modelo 1
+
+```{r}
+# Compilando o modelo
+modelo1 <- compile(modelo1,
+                   loss = 'categorical_crossentropy', # perda para estimar os pesos
+                   optimizer = "adam",
+                   metrics = c("accuracy") # avaliar a predi??o do modelo
+)
+```
+
+Nesta secção, o modelo 1 é compilado. Para tal, são escolhidas as seguintas características:
+
+-   Estimativa de perda através do método *"Categorical Cross Entropy"*, utilizada em problemas de classificação *"one hot encoding"*.
+
+-   Otimização por método "Adam", que regula como os pesos serão ajustados pelos neurônios ao treinar o modelo com a base de imagens.
+
+-   Utilização da métrica de análise de eficácia através da Acurácia, quando a validação for realizada.
+
+### Treinando o modelo 1
+
+O modelo 1 é treinado utilizando 30 `epochs` e um `batch size` de 128.
+
+O `validation split` é de `0.2`.
+
+```{r, results='hide'}
+# Treinando o modelo
+history <- modelo1 %>%
+  fit(x_train,
+      y_train,
+      epochs = 30,
+      batch_size = 128, validation_split = 0.2
+  )
+```
+
+```{r}
+history
+```
+
+### Avaliação das métricas do Modelo 1
+
+```{r}
+# Avaliando o modelo
+eval <- modelo1 %>% evaluate(x_test, y_test)
+
+comparacao <- data.frame(modelo = character(), 
+                         loss = numeric(),
+                         acc = numeric(),
+                         stringsAsFactors = F)
+comparacao[nrow(comparacao)+1, ] <- c("rede:256_128", eval[1], eval[2])
+```
+
+## Modelo de Rede Neural 2
+
+```{r}
+## Defina o formato da entrada
+img_rows   <- 28   # Linhas das imagens mnist
+img_cols   <- 28   # Colunas das imagens mnist
+channels   <- 1    # 1 = escala de cinza, 3 = RGB
+num_classes <- 10  # dígitos de 0‑9 (exemplo MNIST)
+
+# Pré-configurando o modelo
+modelo_cnn <- keras_model_sequential() %>%
+  # 1ª camada convolucional
+  layer_conv_2d(filters = 32,
+                kernel_size = c(3, 3),
+                activation  = "relu",
+                input_shape = c(img_rows, img_cols, channels)) %>%
+  # 2ª camada convolucional
+  layer_conv_2d(filters = 64,
+                kernel_size = c(3, 3),
+                activation  = "relu") %>%
+  # Pooling
+  layer_max_pooling_2d(pool_size = c(3, 3)) %>%
+  # Dropout
+  layer_dropout(rate = 0.5) %>%
+  # Achata para um vetor
+  layer_flatten() %>%
+  # Densa oculta
+  layer_dense(units = 250, activation = "sigmoid") %>%
+  # Saída
+  layer_dense(units = num_classes, activation = "softmax")
+
+summary(modelo_cnn)
+```
+
+Ao construir a estrutura da rede neural, antes, definimos os parâmetros de como a imagem do banco será recebida no input. Cada imagem tem 28 x 28 pixels, e em geral pode ter até 3 camadas com informações de cor (RGB). No caso deste laboratório, estamos utilizando a base MNIST, que contém apenas 1 canal (preto e branco).
+
+Explicando:
+
+**A primeira camada** é `layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "relu", input_shape = c(img_rows, img_cols, channels))`
+
+Um filtro convolucional 2D cria um filtro que varre a imagem em partes. O parâmetro `kernel_size` de `3,3` define que este modelo receberá do neurônio de entrada uma imagem 28x28, e ele irá analisar ela em quadrados de 3x3.
+
+O parâmetro `filters` determina o número de filtros diferentes que serão aplicados. Desta forma, o número de canais que era 1 na entrada, se tornará 32 (uma nova imagem com a aplicação de cada filtro).
+
+Como cada janela do `kernel_size` resulta em 1 novo valor de pixel, e ao aplicar o filtro, aumentamos o número de *channels*, de certa forma, os *outputs* dessa camada convolucional terá mais *channels* , mas em contrapartida, serão imagens com menos *pixels*, pois não foi definido um *"padding"*, que adiciona uma borda nas imagens antes de aplicar os filtros.
+
+**A segunda camada** de neurônios convolucionais 2d segue o mesmo princípio da primeira, mas com 64 filtros. É importante ressaltar que as camadas convolucionais não são densas, isto é, não há conexões entre todos os neurônios da camada prévia com a posterior. Em contrapartida, camadas convolucionais de neurônios compartilham entre si os *outputs* do filtro criado com neurônios diferentes da próxima camada. Isto é, uma mesma imagem que foi transformada por um neurônio convolucional 2d gerará vários *outputs*, e cada um deles irá para neurônios diferentes da próxima camada.
+
+**A terceira camada** é uma operação de `max_pooling`, que, neste caso, reduz a imagem aplicando em pedaços menores dela, de 3x3 pixels, um filtro que mantém no *output* apenas 1 pixel de valor máximo naquela janela.
+
+**A quarta camada** é um *dropout* de 50% das conexões entre os neurônios, ao realizar o treinamento, que previni *overfitting* e uma sobrecarga computacional.
+
+**A quinta camada** realiza o que foi feito no exemplo do laboratório 4 (ou modelo 1 deste trabalho), em que as imagens são unidas de forma convertida, em um dataframe, cujas linhas representam 1 imagem cada uma, e as colunas possuirão os valores de cada pixel daquela imagem. Isso permite adaptar as informações processadas até agora como array 4D em uma simples tabela 2D, em que os dados podem ser tratados de forma densa.
+
+**A Sexta camada** cria 250 neurônios com função de ativação *"sigmoid".*
+
+Enfim **A Sétima camada** são os neurônios de saída com a função de ativação *"soft*max" para poder criar uma classificação *One Hot Encode*, e finalmente determinar, para cada imagem do *input*, qual número de 0 até 9 ela é.
+
+Em resumo:
+
+##  Resumo do fluxo:
+
+1.   **Entrada:** imagem 28x28x1 (preto e branco)
+
+2.   **Conv1:** detecta bordas e padrões simples
+
+3.  **Conv2:** detecta padrões mais complexos
+
+4.  **Pooling:** reduz tamanho da imagem
+
+5.  **Dropout:** desativa 50% dos neurônios
+
+6.  **Flatten:** transforma imagem em vetor
+
+7.  **Densa:** combina tudo em uma camada com 250 neurônios
+
+8.  **Saída:** 10 neurônios com softmax (classificação)
+
+### Treinando o modelo de Rede Neural 2 (CNN)
+
+O modelo 1 é treinado utilizando 30 `epochs` e um `batch size` de 128.
+
+O `validation split` é de `0.2`.
+
+Importante destacar que antes de treinar este modelo, é necessário alterar a base de treino. Os neurônios convolucionais precisam receber as imagens como um array de 3 dimensões (pixels de X e Y, e channels).
+
+```{r, prompt=FALSE, message=FALSE, results='hide'}
+
+# Ao usar neurônios de convolução 2D, precisamos que o X_treino volte a ser 4D
+x_train_cnn <- array_reshape(x_train, c(nrow(x_train), img_rows, img_cols, channels))
+
+# Compilando o modelo
+modelo_cnn <- compile(modelo_cnn,
+                   loss = 'categorical_crossentropy', # perda para estimar os pesos
+                   optimizer = "adam",
+                   metrics = c("accuracy") # avaliar a predição do modelo
+)
+
+# Parâmetros para interromper o treino, caso a acurácia não melhore:
+early_stop <- callback_early_stopping(
+  monitor = "val_accuracy",    # métrica que será monitorada
+  patience = 5,                # número de épocas sem melhoria até parar
+  restore_best_weights = TRUE  # recupera os melhores pesos
+)
+
+# Treinando o modelo
+history <- modelo_cnn %>%
+  fit(x_train_cnn,
+      y_train,
+      epochs = 30,
+      batch_size = 128,
+      validation_split = 0.2,
+      callbacks = list(early_stop))
+```
+
+```{r}
+plot(history)
+```
+
+```{r}
+history
+```
+
+No final, o treinamento do modelo traz uma validação com acurácia de 99,16% e um valor da função de perda de 0,03111 (3,11%).
+
+Abaixo será apresentado uma tentativa de alterar alguns parâmetros do treino para verificar se é possível melhorar as métricas de validação:
+
+```{r, prompt=FALSE, message=FALSE, results='hide'}
+modelo_cnn_v2 <- compile(modelo_cnn,
+                   loss = 'categorical_crossentropy', # perda para estimar os pesos
+                   optimizer = "adam",
+                   metrics = c("accuracy") # avaliar a predição do modelo
+)
+
+# Treinando o modelo cnn2
+history2 <- modelo_cnn %>%
+  fit(x_train_cnn,
+      y_train,
+      epochs = 20,
+      batch_size = 256,
+      validation_split = 0.3,
+      callbacks = list(early_stop))
+```
+
+```{r}
+plot(history2)
+```
+
+Contudo, observa-se que valores grande de `batch_size` imedem o modelo de convergir. E apesar disso, temos um valor alto de acurácia, o que pode indicar um *overfitting*. O `modelo_cnn_v2` será desconsiderado.
+
+### Avaliação das métricas do Modelo CNN
+
+```{r}
+# Avaliando o modelo CNN
+x_test_cnn <- array_reshape(x_test, c(nrow(x_test), img_rows, img_cols, channels))
+
+eval <- modelo_cnn %>% evaluate(x_test_cnn, y_test)
+
+comparacao <- data.frame(modelo = character(), 
+                         loss = numeric(),
+                         acc = numeric(),
+                         stringsAsFactors = F)
+
+comparacao[nrow(comparacao)+1, ] <- c("rede:256_128", eval[1], eval[2])
+```
+
+Conclusão: Foi obtido uma acurácia de **99,23%** e um valor da função de perda de **0,024**.
+
+## Predict da base de Avaliação
+
+Portanto. Agora resta validar o modelo escolhido treinado com a base de dados nova: `base_avaliacao.rds`, utilizando o modelo treinado: `modelo_cnn`.
+
+```{r}
+q3_df <- readRDS("base_avaliacao.rds")
+
+#q3_test <- array_reshape(q3_df, c(nrow(q3_df), 784))
+
+pred <- modelo_cnn %>% predict(q3_df) %>% k_argmax() %>%k_get_value()
+
+# Plotando uma amostra ----------------------------------------------------
+par(mfcol=c(10,10))
+par(mar=c(0, 0, 2, 0), xaxs='i', yaxs='i') 
+
+set.seed(1)
+indices <- sample(nrow(q3_df), 100)
+for (idx in indices) { 
+  im <- q3_df[idx,,]
+  im <- t(apply(im, 2, rev)) 
+  image(1:28, 1:28, im, col=gray((0:255)/255), 
+        xaxt='n', main=paste(pred[idx]))
+}
+```
